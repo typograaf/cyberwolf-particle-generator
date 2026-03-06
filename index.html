@@ -188,6 +188,11 @@
       <input type="range" id="rotationSlider" min="0"   max="100"  step="1"   value="100">
       <span class="ctrl-val" id="rotationVal">100%</span>
     </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Min Scale</span>
+      <input type="range" id="minScaleSlider" min="0"   max="100"  step="1"   value="0">
+      <span class="ctrl-val" id="minScaleVal">0%</span>
+    </div>
     <div class="ctrl-divider"></div>
     <button id="exportBtn">Export</button>
   </div>
@@ -303,6 +308,7 @@
     let staggerPct   = 100;
     let overlapPct   = 68;
     let shufflePct   = 27;
+    let minScalePct  = 0;
     let innerR       = 1.0;
     let outerR       = 1.9;
 
@@ -328,6 +334,7 @@
     bind('overlapSlider',  'overlapVal',  v => Math.round(v) + '%',  v => { overlapPct = v; });
     bind('shuffleSlider',  'shuffleVal',  v => Math.round(v) + '%',  v => { shufflePct = v; });
     bind('rotationSlider', 'rotationVal', v => Math.round(v) + '%',  v => { orbit.autoRotateSpeed = (v / 100) * 3.0; });
+    bind('minScaleSlider', 'minScaleVal', v => Math.round(v) + '%',  v => { minScalePct = v; });
 
     /* ── Pre-allocated temporaries ── */
     const _vBase  = new THREE.Vector3();
@@ -394,7 +401,8 @@
 
         const facing     = Math.max(0, _vA.dot(camDir));
         const depthScale = 0.04 + 0.96 * Math.pow(facing, 1.4);
-        dummy.scale.setScalar(depthScale * sizeMult);
+        const sc         = depthScale * sizeMult;
+        dummy.scale.setScalar(sc < minScalePct / 100 ? 0 : sc);
 
         _vC.subVectors(camera.position, _vB).normalize();
         const d = _vA.dot(_vC);
