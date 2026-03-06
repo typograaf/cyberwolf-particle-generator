@@ -377,7 +377,7 @@
         const lon = Math.atan2(_vBase.z, _vBase.x);
         const lat = _vBase.y;
         const wE  = Math.sin(lon * WAVE_FREQ + t * WAVE_SPD) * WAVE_AMP * waveScale;
-        const wN  = Math.sin(lat * WAVE_FREQ * 1.4 - t * WAVE_SPD * 0.7) * WAVE_AMP * waveScale * 0.5;
+        const wN  = Math.sin(lat * WAVE_FREQ * 1.4 - t * WAVE_SPD) * WAVE_AMP * waveScale * 0.5;
         _vA.copy(_vBase).addScaledVector(_vEast, wE).addScaledVector(_vNorth, wN).normalize();
 
         const rank     = i * (1 - shuffle01) + phaseOrder[i] * shuffle01;
@@ -477,9 +477,12 @@
       const EW   = EXPORT_SIZE;
       const EH   = EXPORT_SIZE;
 
-      // ≈ 10 s snapped to a whole number of oscillation cycles
-      const period = (2 * Math.PI) / (0.9 * speed);
-      const dur    = Math.max(1, Math.round(10 / period)) * period;
+      // ≈ 10 s snapped to an EVEN number of oscillation cycles
+      // (even nCycles required so both wave components complete whole periods)
+      const period  = (2 * Math.PI) / (0.9 * speed);
+      let nCycles   = Math.max(1, Math.round(10 / period));
+      if (nCycles % 2 !== 0) nCycles = nCycles < 2 ? 2 : nCycles - 1;
+      const dur     = nCycles * period;
       const totalFrames = Math.round(dur * EXPORT_FPS);
 
       orbit.autoRotate = false;
