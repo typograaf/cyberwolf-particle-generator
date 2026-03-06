@@ -457,8 +457,7 @@
         btn.disabled    = false;
       }
 
-      const isSafari = navigator.vendor && navigator.vendor.includes('Apple');
-      if (isSafari || typeof VideoEncoder === 'undefined') {
+      if (typeof VideoEncoder === 'undefined') {
         alert('MP4 export requires Chrome or Edge.'); return;
       }
 
