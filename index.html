@@ -435,201 +435,143 @@
       renderer.setSize(w, h);
     });
 
-    /* ── Export ── */
+    /* ── Export (equipe-danvers pattern: async for-loop + createImageBitmap) ── */
     const EXPORT_FPS  = 60;
     const EXPORT_SIZE = 3840; // 4K square, always even
 
-    function calcLoopDuration() {
-      const period = (2 * Math.PI) / (0.9 * speed);
-      return Math.max(1, Math.round(10 / period)) * period; // ≈ 10 s, exact cycle multiple
-    }
+    let exporting = false;
 
-    document.getElementById('exportBtn').addEventListener('click', async () => {
-      if (isRecording || isCapturing) return;
+    async function startExport() {
+      if (exporting) return;
 
-      const btn       = document.getElementById('exportBtn');
-      const isSafari  = navigator.vendor && navigator.vendor.includes('Apple');
-      const hasVE     = typeof VideoEncoder !== 'undefined';
+      const btn = document.getElementById('exportBtn');
 
-      if (!hasVE && typeof MediaRecorder === 'undefined') {
-        alert('Video export is not supported in this browser.'); return;
-      }
-
-      btn.textContent = 'Preparing…';
-      btn.disabled    = true;
-
-      const live = canvasSize();
-      const EW   = EXPORT_SIZE;
-      const EH   = EXPORT_SIZE;
-      const dur  = calcLoopDuration();
-
-      orbit.autoRotate = false;
-      renderer.setSize(EW, EH);
-      camera.aspect = 1.0;
-      camera.updateProjectionMatrix();
-
-      let captureActive = false; // guard against ghost rAF/setTimeout calls
-
-      function restoreLive() {
-        captureActive    = false;
+      function done(msg) {
+        exporting        = false;
         isRecording      = false;
-        isCapturing      = false;
         orbit.autoRotate = true;
         renderer.setSize(live.w, live.h);
         camera.aspect = live.w / live.h;
         camera.updateProjectionMatrix();
-        btn.textContent = 'Export';
+        btn.textContent = msg || 'Export';
         btn.disabled    = false;
       }
 
-      /* ── VideoEncoder path (Chrome / Edge) ── */
-      if (hasVE && !isSafari) {
-        // Wait for mp4-muxer preload
-        await new Promise(resolve => {
-          const check = () => window.mp4Muxer ? resolve() : setTimeout(check, 50);
-          check();
-        });
+      const isSafari = navigator.vendor && navigator.vendor.includes('Apple');
+      if (isSafari || typeof VideoEncoder === 'undefined') {
+        alert('MP4 export requires Chrome or Edge.'); return;
+      }
 
-        // Find highest supported H.264 level for this resolution
-        const codecCandidates = [
-          'avc1.640042', // High Level 6.2
-          'avc1.640040', // High Level 6.0
-          'avc1.640034', // High Level 5.2
-          'avc1.640033', // High Level 5.1
-        ];
-        const baseConfig = { width: EW, height: EH, bitrate: 50_000_000, framerate: EXPORT_FPS };
-        let codec = null;
-        for (const c of codecCandidates) {
-          const { supported } = await VideoEncoder.isConfigSupported({ codec: c, ...baseConfig });
-          if (supported) { codec = c; break; }
-        }
-        if (!codec) {
-          alert('H.264 encoding is not supported at 4K on this device. Try Safari or a different browser.');
-          restoreLive(); return;
-        }
+      exporting        = true;
+      btn.textContent  = 'Preparing…';
+      btn.disabled     = true;
 
-        const { Muxer, ArrayBufferTarget } = window.mp4Muxer;
-        const totalFrames = Math.round(dur * EXPORT_FPS);
-        const target      = new ArrayBufferTarget();
-        const muxer       = new Muxer({
-          target,
-          video: { codec: 'avc', width: EW, height: EH },
-          fastStart: 'in-memory',
-          firstTimestampBehavior: 'offset'
-        });
+      const live = canvasSize();
+      const EW   = EXPORT_SIZE;
+      const EH   = EXPORT_SIZE;
 
-        let encoderFailed = false;
-        const videoEncoder = new VideoEncoder({
-          output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-          error: e => {
-            encoderFailed = true;
-            alert('Encoder error: ' + e.message);
-            restoreLive();
-          }
-        });
+      // ≈ 10 s snapped to a whole number of oscillation cycles
+      const period = (2 * Math.PI) / (0.9 * speed);
+      const dur    = Math.max(1, Math.round(10 / period)) * period;
+      const totalFrames = Math.round(dur * EXPORT_FPS);
 
+      orbit.autoRotate = false;
+      isRecording      = true;
+      renderer.setSize(EW, EH);
+      camera.aspect = 1.0;
+      camera.updateProjectionMatrix();
+
+      // Temp canvas for drawing each frame
+      const tmp    = document.createElement('canvas');
+      tmp.width    = EW;
+      tmp.height   = EH;
+      const tmpCtx = tmp.getContext('2d', { alpha: false });
+
+      // Wait for mp4-muxer
+      await new Promise(res => {
+        const check = () => window.mp4Muxer ? res() : setTimeout(check, 50);
+        check();
+      });
+      const { Muxer, ArrayBufferTarget } = window.mp4Muxer;
+
+      const target = new ArrayBufferTarget();
+      const muxer  = new Muxer({
+        target,
+        video: { codec: 'avc', width: EW, height: EH },
+        fastStart: 'in-memory',
+        firstTimestampBehavior: 'offset',
+      });
+
+      // Probe codec — same candidate list as equipe-danvers, extended for 4K
+      const candidates = ['avc1.640042', 'avc1.640040', 'avc1.640034', 'avc1.640033',
+                          'avc1.4D0033', 'avc1.640028', 'avc1.4D0028', 'avc1.42E028'];
+      let codec = null;
+      for (const c of candidates) {
         try {
-          videoEncoder.configure({ codec, ...baseConfig });
-          await new Promise(r => setTimeout(r, 100));
-          if (videoEncoder.state !== 'configured') throw new Error('Encoder not configured');
-        } catch (e) {
-          alert('Failed to configure encoder: ' + e.message);
-          restoreLive(); return;
+          const r = await VideoEncoder.isConfigSupported(
+            { codec: c, width: EW, height: EH, bitrate: 50_000_000, framerate: EXPORT_FPS });
+          if (r.supported) { codec = c; break; }
+        } catch (_) {}
+      }
+      if (!codec) { done('No H.264 codec supported'); return; }
+
+      let encoderError = null;
+      const videoEncoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error:  e => { encoderError = e; },
+      });
+
+      try {
+        videoEncoder.configure({ codec, width: EW, height: EH, bitrate: 50_000_000, framerate: EXPORT_FPS });
+      } catch (e) { done('Configure failed: ' + e.message); return; }
+
+      // Sequential async render loop — no rAF, no captureActive juggling
+      for (let i = 0; i < totalFrames; i++) {
+        if (encoderError) { done('Encoder error: ' + encoderError.message); return; }
+
+        const t_frame = (i / totalFrames) * dur * speed;
+        renderAt(t_frame);
+
+        tmpCtx.fillStyle = '#fff';
+        tmpCtx.fillRect(0, 0, EW, EH);
+        tmpCtx.drawImage(renderer.domElement,
+          0, 0, renderer.domElement.width, renderer.domElement.height,
+          0, 0, EW, EH);
+
+        // createImageBitmap — broader compat than passing canvas to VideoFrame directly
+        const bitmap = await createImageBitmap(tmp);
+        const frame  = new VideoFrame(bitmap, {
+          timestamp: Math.round((i / EXPORT_FPS) * 1_000_000),
+          duration:  Math.round(1_000_000 / EXPORT_FPS),
+        });
+        bitmap.close();
+        videoEncoder.encode(frame, { keyFrame: i % 60 === 0 });
+        frame.close();
+
+        // Let encoder breathe
+        while (videoEncoder.encodeQueueSize > 10) {
+          await new Promise(r => setTimeout(r, 16));
         }
 
-        isRecording   = true;
-        captureActive = true;
-
-        const tmp    = document.createElement('canvas');
-        tmp.width    = EW;
-        tmp.height   = EH;
-        const tmpCtx = tmp.getContext('2d', { alpha: false });
-        let frameNumber = 0;
-
-        function captureFrame() {
-          if (!captureActive) return;
-          if (encoderFailed)  { restoreLive(); return; }
-
-          if (frameNumber >= totalFrames) {
-            captureActive = false;
-            videoEncoder.flush().then(() => {
-              videoEncoder.close();
-              muxer.finalize();
-              const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
-              const url  = URL.createObjectURL(blob);
-              const a    = document.createElement('a');
-              a.href = url; a.download = 'cyberwolf-sphere.mp4'; a.click();
-              URL.revokeObjectURL(url);
-              restoreLive();
-            }).catch(e => { alert('Finalise error: ' + e.message); restoreLive(); });
-            return;
-          }
-
-          if (videoEncoder.encodeQueueSize > 30) {
-            setTimeout(captureFrame, 10); return;
-          }
-
-          const t_frame = (frameNumber / totalFrames) * dur * speed;
-          renderAt(t_frame);
-
-          tmpCtx.fillStyle = '#fff';
-          tmpCtx.fillRect(0, 0, EW, EH);
-          tmpCtx.drawImage(renderer.domElement,
-            0, 0, renderer.domElement.width, renderer.domElement.height,
-            0, 0, EW, EH);
-
-          const frame = new VideoFrame(tmp, {
-            timestamp: Math.round((frameNumber / EXPORT_FPS) * 1_000_000)
-          });
-          videoEncoder.encode(frame, { keyFrame: frameNumber % 60 === 0 });
-          frame.close();
-
-          btn.textContent = Math.round((++frameNumber / totalFrames) * 100) + '%';
-          requestAnimationFrame(captureFrame);
-        }
-
-        captureFrame();
-        return;
+        btn.textContent = Math.round(((i + 1) / totalFrames) * 100) + '%';
       }
 
-      /* ── MediaRecorder path (Safari / fallback) ── */
-      const mimeTypes = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
-      const mimeType  = mimeTypes.find(t => MediaRecorder.isTypeSupported(t));
-      if (!mimeType) {
-        alert('Video recording is not supported in this browser.');
-        restoreLive(); return;
-      }
+      if (encoderError) { done('Encoder error: ' + encoderError.message); return; }
 
-      const stream   = renderer.domElement.captureStream(EXPORT_FPS);
-      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 50_000_000 });
-      const chunks   = [];
-      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-      recorder.onstop = () => {
-        const ext  = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
-        const blob = new Blob(chunks, { type: mimeType });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href = url; a.download = `cyberwolf-sphere.${ext}`; a.click();
-        URL.revokeObjectURL(url);
-        restoreLive();
-      };
+      await videoEncoder.flush();
+      videoEncoder.close();
+      muxer.finalize();
 
-      clock.start();   // reset animation to t=0 for a clean loop
-      isCapturing   = true;
-      captureActive = true;
-      recorder.start();
+      const blob = new Blob([target.buffer], { type: 'video/mp4' });
+      Object.assign(document.createElement('a'), {
+        href: URL.createObjectURL(blob),
+        download: 'cyberwolf-sphere.mp4',
+      }).click();
 
-      const started = performance.now();
-      const tick = setInterval(() => {
-        if (!captureActive) { clearInterval(tick); return; }
-        btn.textContent = Math.min(99, Math.round((performance.now() - started) / (dur * 1000) * 100)) + '%';
-      }, 150);
+      done('Export');
+    }
 
-      setTimeout(() => {
-        clearInterval(tick);
-        recorder.stop();
-      }, dur * 1000);
-    });
+    document.getElementById('exportBtn').addEventListener('click', startExport);
 
   </script>
 </body>
