@@ -189,7 +189,7 @@
       <span class="ctrl-val" id="rotationVal">100%</span>
     </div>
     <div class="ctrl-divider"></div>
-    <button id="exportBtn">Export 10s MP4</button>
+    <button id="exportBtn">Export</button>
   </div>
 
   <script type="importmap">
@@ -436,15 +436,8 @@
     });
 
     /* ── Export helpers ── */
-    const EXPORT_FPS = 60;
-
-    // H264 requires even dimensions — round down to nearest even pixel
-    function evenSize() {
-      return {
-        w: Math.floor(window.innerWidth  / 2) * 2,
-        h: Math.floor(window.innerHeight / 2) * 2
-      };
-    }
+    const EXPORT_FPS  = 60;
+    const EXPORT_SIZE = 3840; // 4K square — always even
 
     // Perfect-loop duration: snap to a whole number of oscillation cycles near 10 s
     function loopDuration() {
@@ -470,8 +463,9 @@
       btn.disabled = true;
 
       const live = canvasSize();
-      const { w: EW, h: EH } = evenSize();   // always even for H264
-      const dur = loopDuration();
+      const EW   = EXPORT_SIZE;   // 3840 — even, 4K square
+      const EH   = EXPORT_SIZE;
+      const dur  = loopDuration();
 
       orbit.autoRotate = false;
       renderer.setSize(EW, EH);
@@ -485,7 +479,7 @@
         renderer.setSize(live.w, live.h);
         camera.aspect = live.w / live.h;
         camera.updateProjectionMatrix();
-        btn.textContent = 'Export 10s MP4';
+        btn.textContent = 'Export';
         btn.disabled = false;
       }
 
@@ -515,10 +509,10 @@
 
         try {
           videoEncoder.configure({
-            codec: 'avc1.640033',
+            codec: 'avc1.640042',   // H.264 High Profile Level 6.2 — supports 4K 60fps
             width: EW,
             height: EH,
-            bitrate: 15_000_000,
+            bitrate: 50_000_000,    // 50 Mbps for 4K
             framerate: EXPORT_FPS
           });
           await new Promise(r => setTimeout(r, 100));
@@ -592,7 +586,7 @@
       }
 
       const stream   = renderer.domElement.captureStream(EXPORT_FPS);
-      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12_000_000 });
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 50_000_000 });
       const chunks   = [];
       recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = () => {
