@@ -525,9 +525,12 @@
       tmp.height   = encH;
       const tmpCtx = tmp.getContext('2d', { alpha: false });
 
-      // Pre-compute camera rotation per frame (mirrors orbit.autoRotate behaviour)
-      const exportStartPos = camera.position.clone();
-      const rotPerFrame    = (2 * Math.PI / 3600) * orbit.autoRotateSpeed; // same formula as OrbitControls
+      // Pre-compute camera rotation per frame — snapped to whole revolutions so it loops
+      const exportStartPos  = camera.position.clone();
+      const naturalRadsPerFrame = (2 * Math.PI / 3600) * orbit.autoRotateSpeed;
+      const naturalTotal        = naturalRadsPerFrame * totalFrames;
+      const numRevolutions      = Math.max(1, Math.round(naturalTotal / (2 * Math.PI)));
+      const rotPerFrame         = (numRevolutions * 2 * Math.PI) / totalFrames;
 
       // Sequential async render loop — no rAF, no captureActive juggling
       for (let i = 0; i < totalFrames; i++) {
