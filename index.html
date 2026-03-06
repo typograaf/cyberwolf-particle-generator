@@ -555,7 +555,8 @@
             return;
           }
 
-          setTimeout(captureFrame, 10);
+          if (videoEncoder.encodeQueueSize > 30) {
+            setTimeout(captureFrame, 10);
             return;
           }
 
