@@ -402,7 +402,7 @@
         const facing     = Math.max(0, _vA.dot(camDir));
         const depthScale = 0.04 + 0.96 * Math.pow(facing, 1.4);
         const sc         = depthScale * sizeMult;
-        dummy.scale.setScalar(sc < minScalePct / 100 ? 0 : sc);
+        dummy.scale.setScalar(depthScale < minScalePct / 100 ? 0 : sc);
 
         _vC.subVectors(camera.position, _vB).normalize();
         const d = _vA.dot(_vC);
