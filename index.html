@@ -437,7 +437,7 @@
 
     /* ── Export (equipe-danvers pattern: async for-loop + createImageBitmap) ── */
     const EXPORT_FPS  = 60;
-    const EXPORT_SIZE = 3840; // 4K square, always even
+    const EXPORT_SIZE = 2160; // square, within H.264 Level 5.1 limits
 
     let exporting = false;
 
@@ -484,33 +484,23 @@
       });
       const { Muxer, ArrayBufferTarget } = window.mp4Muxer;
 
-      // Pick codec + resolution: prefer VP9 at full 4K (no H.264 level restrictions),
-      // fall back to H.264 at 2048×2048 (fits within Level 5.1 limits).
-      const probe = async (codec, w, h, br, fps) => {
+      // H.264 probe at actual export resolution (2160×2160 fits Level 5.1)
+      const candidates = ['avc1.640033', 'avc1.4D0033', 'avc1.640028', 'avc1.4D0028', 'avc1.42E028'];
+      let codec = null;
+      for (const c of candidates) {
         try {
-          const r = await VideoEncoder.isConfigSupported({ codec, width: w, height: h, bitrate: br, framerate: fps });
-          return r.supported;
-        } catch (_) { return false; }
-      };
-
-      let codec, encW, encH, muxCodec, bitrate;
-
-      if (await probe('vp09.00.51.08', EW, EH, 40_000_000, EXPORT_FPS)) {
-        codec = 'vp09.00.51.08'; encW = EW; encH = EH; muxCodec = 'vp9'; bitrate = 40_000_000;
-      } else if (await probe('vp09.00.41.08', EW, EH, 40_000_000, EXPORT_FPS)) {
-        codec = 'vp09.00.41.08'; encW = EW; encH = EH; muxCodec = 'vp9'; bitrate = 40_000_000;
-      } else if (await probe('avc1.640033', 2048, 2048, 20_000_000, EXPORT_FPS)) {
-        codec = 'avc1.640033'; encW = 2048; encH = 2048; muxCodec = 'avc'; bitrate = 20_000_000;
-      } else if (await probe('avc1.640028', 2048, 2048, 20_000_000, EXPORT_FPS)) {
-        codec = 'avc1.640028'; encW = 2048; encH = 2048; muxCodec = 'avc'; bitrate = 20_000_000;
-      } else {
-        done('No supported video codec found'); return;
+          const r = await VideoEncoder.isConfigSupported({ codec: c, width: EW, height: EH, bitrate: 20_000_000, framerate: EXPORT_FPS });
+          if (r.supported) { codec = c; break; }
+        } catch (_) {}
       }
+      if (!codec) { done('No H.264 codec supported'); return; }
+
+      const encW = EW, encH = EH, bitrate = 20_000_000;
 
       const target = new ArrayBufferTarget();
       const muxer  = new Muxer({
         target,
-        video: { codec: muxCodec, width: encW, height: encH },
+        video: { codec: 'avc', width: encW, height: encH },
         fastStart: 'in-memory',
         firstTimestampBehavior: 'offset',
       });
