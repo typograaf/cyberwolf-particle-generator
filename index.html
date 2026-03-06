@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cyberwolf — Particle Generator</title>
+  <title>Cyberwolf — Particle Sphere</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -11,6 +11,13 @@
       background: #fff;
       overflow: hidden;
       font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      display: block;
     }
 
     #controls {
@@ -26,6 +33,7 @@
       border: 1px solid rgba(0, 0, 0, 0.09);
       border-radius: 18px;
       user-select: none;
+      z-index: 10;
     }
 
     .ctrl-divider {
@@ -46,6 +54,7 @@
       letter-spacing: 0.11em;
       text-transform: uppercase;
       color: rgba(0, 0, 0, 0.38);
+      flex-shrink: 0;
     }
 
     .ctrl-val {
@@ -55,6 +64,7 @@
       font-weight: 600;
       color: rgba(0, 0, 0, 0.8);
       letter-spacing: 0.02em;
+      flex-shrink: 0;
     }
 
     input[type="range"] {
@@ -75,27 +85,50 @@
       cursor: pointer;
       transition: transform 0.12s ease;
     }
-    input[type="range"]::-webkit-slider-thumb:hover {
-      transform: scale(1.4);
-    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.4); }
 
-    /* ── Mobile ── */
+    #exportBtn {
+      margin-top: 4px;
+      padding: 7px 0;
+      background: #000;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.15s;
+    }
+    #exportBtn:disabled { opacity: 0.45; cursor: default; }
+    #exportBtn:not(:disabled):hover { opacity: 0.7; }
+
+    /* ── Mobile: sphere top half, controls bottom half ── */
     @media (max-width: 600px) {
       #controls {
+        position: fixed;
+        top: 50vh;
         bottom: 0;
         left: 0;
         right: 0;
+        width: 100%;
         transform: none;
-        border-radius: 18px 18px 0 0;
-        padding: 12px 16px 20px;
-        gap: 7px;
-        max-height: 55vh;
+        border-radius: 0;
+        border: none;
+        border-top: 1px solid rgba(0, 0, 0, 0.10);
+        background: #fff;
+        padding: 14px 20px env(safe-area-inset-bottom, 16px);
+        gap: 10px;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
       }
-      input[type="range"] { width: 110px; }
-      .ctrl-label { width: 54px; font-size: 9px; }
+      .ctrl-row { gap: 12px; }
+      .ctrl-label { width: 60px; font-size: 9px; }
       .ctrl-val   { width: 36px; font-size: 10px; }
+      input[type="range"] { flex: 1; width: auto; min-width: 0; }
+      #exportBtn { margin-top: 6px; padding: 10px 0; font-size: 11px; }
     }
   </style>
 </head>
@@ -155,6 +188,8 @@
       <input type="range" id="rotationSlider" min="0"   max="100"  step="1"   value="100">
       <span class="ctrl-val" id="rotationVal">100%</span>
     </div>
+    <div class="ctrl-divider"></div>
+    <button id="exportBtn">Export 10s MP4</button>
   </div>
 
   <script type="importmap">
@@ -166,20 +201,33 @@
   }
   </script>
 
+  <!-- Pre-load mp4-muxer so it's available when export starts -->
+  <script type="module">
+    import * as mp4Muxer from 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/+esm';
+    window.mp4Muxer = mp4Muxer;
+  </script>
+
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
+    /* ── Viewport helpers ── */
+    const mobile = () => window.innerWidth <= 600;
+    function canvasSize() {
+      return { w: window.innerWidth, h: mobile() ? Math.round(window.innerHeight * 0.5) : window.innerHeight };
+    }
+
     /* ── Renderer ── */
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-    renderer.setSize(innerWidth, innerHeight);
+    const { w: iW, h: iH } = canvasSize();
+    renderer.setSize(iW, iH);
     renderer.setClearColor(0xffffff, 1);
     document.body.prepend(renderer.domElement);
 
     /* ── Scene / Camera ── */
     const scene  = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.01, 200);
+    const camera = new THREE.PerspectiveCamera(52, iW / iH, 0.01, 200);
     camera.position.set(0, 0, 8);
 
     /* ── Orbit controls ── */
@@ -191,19 +239,14 @@
     orbit.minDistance     = 2;
     orbit.maxDistance     = 20;
 
-    /* ── Shape geometry (Sources/shape.svg) ──
-       local +Y = wide top  → outward from sphere centre
-       local -Y = narrow tip → inward toward centre
-    ── */
+    /* ── Shape geometry (Sources/shape.svg) ── */
     const SVG_W = 69, SVG_H = 59;
     const BASE_SCALE = 0.0003;
-
     const rawPts = [
       [26.9443, 58.7875], [41.369,  58.7875],
       [68.3132, 12.5196], [60.9648,  0],
       [ 7.34843, 0],      [ 0,      12.5196],
     ];
-
     const shape = new THREE.Shape();
     rawPts.forEach(([x, y], i) => {
       const tx =  (x - SVG_W / 2) * BASE_SCALE;
@@ -217,17 +260,11 @@
 
     /* ── Particle data ── */
     const MAX_COUNT = 3000;
-    const PHI       = (1 + Math.sqrt(5)) / 2;
     const WAVE_AMP  = 0.30;
     const WAVE_FREQ = 2.5;
     const WAVE_SPD  = 0.45;
 
-    /* ── Grid directions: true lat/lon grid, recomputed on count change ──
-       nLon columns × nLat rows, equal angular spacing in both axes.
-       Latitudes avoid exact poles so every row is fully populated.
-       Wave displacement is scaled to zero at 100% Order so the grid stays crisp. */
     const gridDirs = Array.from({ length: MAX_COUNT }, () => new THREE.Vector3());
-
     function computeGridDirs(n) {
       if (n < 1) return;
       const nLon = Math.max(2, Math.round(Math.sqrt(2 * n)));
@@ -235,33 +272,18 @@
       for (let i = 0; i < n; i++) {
         const row = Math.floor(i / nLon);
         const col = i % nLon;
-        // Space latitudes evenly, never touching poles
         const lat = Math.PI * ((row + 0.5) / nLat - 0.5);
         const lon = 2 * Math.PI * col / nLon;
-        gridDirs[i].set(
-          Math.cos(lat) * Math.cos(lon),
-          Math.sin(lat),
-          Math.cos(lat) * Math.sin(lon),
-        ).normalize();
+        gridDirs[i].set(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)).normalize();
       }
     }
 
-    /* ── Random directions: uniform on sphere, fixed at startup ── */
     const randDirs = Array.from({ length: MAX_COUNT }, () => {
       const lat = Math.PI * (Math.random() - 0.5);
       const lon = 2 * Math.PI * Math.random();
-      return new THREE.Vector3(
-        Math.cos(lat) * Math.cos(lon),
-        Math.sin(lat),
-        Math.cos(lat) * Math.sin(lon),
-      ).normalize();
+      return new THREE.Vector3(Math.cos(lat) * Math.cos(lon), Math.sin(lat), Math.cos(lat) * Math.sin(lon)).normalize();
     });
 
-    /* ── Stagger order: shuffled index mapping ──
-       Grid indices are spatial (0–34 = first row, 35–69 = second row, …).
-       Assigning stagger phase by raw index makes whole rows fire together.
-       A Fisher-Yates shuffle breaks the spatial correlation so every individual
-       shape gets a unique, non-adjacent phase slot → true shape-by-shape firing. */
     const phaseOrder = new Int32Array(MAX_COUNT);
     for (let i = 0; i < MAX_COUNT; i++) phaseOrder[i] = i;
     for (let i = MAX_COUNT - 1; i > 0; i--) {
@@ -278,9 +300,9 @@
     let sizePct      = 246;
     let orderPct     = 100;
     let speed        = 1.32;
-    let staggerPct   = 100;  // 0% = all in sync, 100% = one shape at a time
-    let overlapPct   = 68;   // 0% = one at a time, 100% = all always moving
-    let shufflePct   = 27;   // 0% = sequential order, 100% = shuffled order
+    let staggerPct   = 100;
+    let overlapPct   = 68;
+    let shufflePct   = 27;
     let innerR       = 1.0;
     let outerR       = 1.9;
 
@@ -296,136 +318,88 @@
         onChange(v);
       });
     }
-
-    bind('countSlider',    'countVal',    v => Math.round(v),       v => {
-      currentCount = Math.round(v);
-      computeGridDirs(currentCount);
-      instancedMesh.count = currentCount;
-    });
-    bind('orderSlider',    'orderVal',    v => Math.round(v) + '%', v => { orderPct   = v; });
-    bind('sizeSlider',     'sizeVal',     v => Math.round(v) + '%', v => { sizePct    = v; });
-    bind('innerSlider',    'innerVal',    v => v.toFixed(1),         v => { innerR     = v; });
-    bind('outerSlider',    'outerVal',    v => v.toFixed(1),         v => { outerR     = v; });
-    bind('speedSlider',    'speedVal',    v => Math.round(v) + '%', v => { speed      = v / 100; });
-    bind('staggerSlider',  'staggerVal',  v => Math.round(v) + '%', v => { staggerPct = v; });
-    bind('overlapSlider',  'overlapVal',  v => Math.round(v) + '%', v => { overlapPct = v; });
-    bind('shuffleSlider',  'shuffleVal',  v => Math.round(v) + '%', v => { shufflePct = v; });
-    bind('rotationSlider', 'rotationVal', v => Math.round(v) + '%', v => {
-      orbit.autoRotateSpeed = (v / 100) * 3.0;
-    });
+    bind('countSlider',    'countVal',    v => Math.round(v),        v => { currentCount = Math.round(v); computeGridDirs(currentCount); instancedMesh.count = currentCount; });
+    bind('orderSlider',    'orderVal',    v => Math.round(v) + '%',  v => { orderPct   = v; });
+    bind('sizeSlider',     'sizeVal',     v => Math.round(v) + '%',  v => { sizePct    = v; });
+    bind('innerSlider',    'innerVal',    v => v.toFixed(1),          v => { innerR     = v; });
+    bind('outerSlider',    'outerVal',    v => v.toFixed(1),          v => { outerR     = v; });
+    bind('speedSlider',    'speedVal',    v => Math.round(v) + '%',  v => { speed      = v / 100; });
+    bind('staggerSlider',  'staggerVal',  v => Math.round(v) + '%',  v => { staggerPct = v; });
+    bind('overlapSlider',  'overlapVal',  v => Math.round(v) + '%',  v => { overlapPct = v; });
+    bind('shuffleSlider',  'shuffleVal',  v => Math.round(v) + '%',  v => { shufflePct = v; });
+    bind('rotationSlider', 'rotationVal', v => Math.round(v) + '%',  v => { orbit.autoRotateSpeed = (v / 100) * 3.0; });
 
     /* ── Pre-allocated temporaries ── */
     const _vBase  = new THREE.Vector3();
     const _vEast  = new THREE.Vector3();
     const _vNorth = new THREE.Vector3();
-    const _vA     = new THREE.Vector3();
-    const _vB     = new THREE.Vector3();
-    const _vC     = new THREE.Vector3();
-    const _vD     = new THREE.Vector3();
-    const _vE     = new THREE.Vector3();
-    const _m4     = new THREE.Matrix4();
-    const camDir  = new THREE.Vector3();
-    const dummy   = new THREE.Object3D();
+    const _vA = new THREE.Vector3();
+    const _vB = new THREE.Vector3();
+    const _vC = new THREE.Vector3();
+    const _vD = new THREE.Vector3();
+    const _vE = new THREE.Vector3();
+    const _m4 = new THREE.Matrix4();
+    const camDir = new THREE.Vector3();
+    const dummy  = new THREE.Object3D();
 
-    /* ── Render loop ── */
-    const clock = new THREE.Clock();
-
-    (function animate() {
-      requestAnimationFrame(animate);
-
-      orbit.update();
-      const t = clock.getElapsedTime() * speed;
-
+    /* ── Core render function — shared by live loop and export ── */
+    function renderAt(t) {
       camDir.copy(camera.position).normalize();
 
+      const TWO_PI    = 2 * Math.PI;
       const sizeMult  = sizePct / 100;
-      const rnd       = 1.0 - orderPct / 100;        // 0=grid, 1=random
-      const waveScale = rnd;                          // wave is zero at 100% Order → grid stays crisp
+      const rnd       = 1.0 - orderPct / 100;
+      const waveScale = rnd;
       const rInner    = Math.min(innerR, outerR - 0.05);
       const rOuter    = outerR;
-
-      const TWO_PI    = 2 * Math.PI;
       const stagger01 = staggerPct / 100;
       const overlap01 = overlapPct / 100;
       const shuffle01 = shufflePct / 100;
       const N         = currentCount;
-      // cyclePhase: 0–π = "out wave", π–2π = "in wave"
       const cyclePhase = ((t * 0.9) % TWO_PI + TWO_PI) % TWO_PI;
-      // Window width per shape per half-cycle:
-      //   overlap=0, stagger=100% → π/N  (one at a time, no overlap)
-      //   overlap=1, stagger=100% → π    (all always moving)
-      //   stagger=0              → π    (all in sync, overlap has no effect)
       const halfWindow = Math.PI * (1 - stagger01 * (1 - 1 / N) * (1 - overlap01));
 
       for (let i = 0; i < currentCount; i++) {
-
-        /* ── Base direction (grid ↔ random) ── */
         _vBase.lerpVectors(gridDirs[i], randDirs[i], rnd).normalize();
 
-        /* ── Tangents derived from base ── */
         _vEast.set(-_vBase.z, 0, _vBase.x);
         if (_vEast.lengthSq() < 0.001) _vEast.set(1, 0, 0);
         _vEast.normalize();
         _vNorth.crossVectors(_vEast, _vBase).normalize();
 
-        /* ── Surface wave — zero at 100% Order so grid remains visible ── */
-        const lon  = Math.atan2(_vBase.z, _vBase.x);
-        const lat  = _vBase.y;
-        const wE   = Math.sin(lon * WAVE_FREQ + t * WAVE_SPD) * WAVE_AMP * waveScale;
-        const wN   = Math.sin(lat * WAVE_FREQ * 1.4 - t * WAVE_SPD * 0.7) * WAVE_AMP * waveScale * 0.5;
+        const lon = Math.atan2(_vBase.z, _vBase.x);
+        const lat = _vBase.y;
+        const wE  = Math.sin(lon * WAVE_FREQ + t * WAVE_SPD) * WAVE_AMP * waveScale;
+        const wN  = Math.sin(lat * WAVE_FREQ * 1.4 - t * WAVE_SPD * 0.7) * WAVE_AMP * waveScale * 0.5;
+        _vA.copy(_vBase).addScaledVector(_vEast, wE).addScaledVector(_vNorth, wN).normalize();
 
-        _vA.copy(_vBase)
-          .addScaledVector(_vEast,  wE)
-          .addScaledVector(_vNorth, wN)
-          .normalize();
-
-        /* ── Radial oscillation — two-wave sequential model ──
-           Cycle 0–2π is split into four zones per shape, measured from outStart:
-             [0,           halfWindow) → traveling out
-             [halfWindow,  π)          → parked at outer (others still going out)
-             [π,           π+halfWindow) → traveling in
-             [π+halfWindow, 2π)        → parked at inner (waiting for next cycle)
-           Using modular outPhase avoids any 2π wraparound snapping. */
-
-        // Firing rank: 0% shuffle = sequential (i), 100% shuffle = shuffled (phaseOrder[i])
         const rank     = i * (1 - shuffle01) + phaseOrder[i] * shuffle01;
-        // Phase offset for this shape's window start
         const outStart = (rank / N) * stagger01 * Math.PI;
-        // Modular distance from this shape's start — always in [0, 2π)
         const outPhase = ((cyclePhase - outStart) % TWO_PI + TWO_PI) % TWO_PI;
 
         let r;
         if (outPhase < halfWindow) {
-          // Traveling out: rInner → rOuter
           const p = outPhase / halfWindow;
           r = rInner + (rOuter - rInner) * (0.5 - 0.5 * Math.cos(p * Math.PI));
         } else if (outPhase < Math.PI) {
-          // Parked at outer while remaining shapes travel out
           r = rOuter;
         } else if (outPhase < Math.PI + halfWindow) {
-          // Traveling in: rOuter → rInner
           const p = (outPhase - Math.PI) / halfWindow;
           r = rOuter - (rOuter - rInner) * (0.5 - 0.5 * Math.cos(p * Math.PI));
         } else {
-          // Parked at inner, waiting for next cycle
           r = rInner;
         }
 
         _vB.copy(_vA).multiplyScalar(r);
 
-        /* ── Depth scale ── */
         const facing     = Math.max(0, _vA.dot(camDir));
         const depthScale = 0.04 + 0.96 * Math.pow(facing, 1.4);
         dummy.scale.setScalar(depthScale * sizeMult);
 
-        /* ── Billboard: face camera, tip toward centre ── */
         _vC.subVectors(camera.position, _vB).normalize();
-
         const d = _vA.dot(_vC);
         _vD.copy(_vA).addScaledVector(_vC, -d);
-        if (_vD.lengthSq() < 1e-6) {
-          _vD.copy(camera.up).addScaledVector(_vC, -camera.up.dot(_vC));
-        }
+        if (_vD.lengthSq() < 1e-6) _vD.copy(camera.up).addScaledVector(_vC, -camera.up.dot(_vC));
         _vD.normalize();
         _vE.crossVectors(_vD, _vC).normalize();
 
@@ -438,14 +412,166 @@
 
       instancedMesh.instanceMatrix.needsUpdate = true;
       renderer.render(scene, camera);
+    }
+
+    /* ── Live render loop ── */
+    const clock = new THREE.Clock();
+    let isRecording = false;
+
+    (function animate() {
+      requestAnimationFrame(animate);
+      if (isRecording) return;
+      orbit.update();
+      renderAt(clock.getElapsedTime() * speed);
     })();
 
     /* ── Resize ── */
     window.addEventListener('resize', () => {
-      camera.aspect = innerWidth / innerHeight;
+      if (isRecording) return;
+      const { w, h } = canvasSize();
+      camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
+      renderer.setSize(w, h);
     });
+
+    /* ── MP4 Export ── */
+    const EXPORT_FPS = 60;
+
+    document.getElementById('exportBtn').addEventListener('click', async () => {
+      if (isRecording) return;
+
+      if (/^((?!chrome|android).)*safari/i.test(navigator.userAgent)) {
+        alert('MP4 export is not supported in Safari. Please use Chrome or Edge.');
+        return;
+      }
+      if (typeof VideoEncoder === 'undefined') {
+        alert('MP4 export requires Chrome or Edge.');
+        return;
+      }
+
+      const btn = document.getElementById('exportBtn');
+      btn.textContent = 'Preparing…';
+      btn.disabled = true;
+
+      // Freeze camera, expand renderer to full window for export
+      orbit.autoRotate = false;
+      const live = canvasSize();
+      const EW = window.innerWidth;
+      const EH = window.innerHeight;
+      renderer.setSize(EW, EH);
+      camera.aspect = EW / EH;
+      camera.updateProjectionMatrix();
+
+      // Wait for mp4-muxer
+      await new Promise(resolve => {
+        const check = () => window.mp4Muxer ? resolve() : setTimeout(check, 50);
+        check();
+      });
+
+      const { Muxer, ArrayBufferTarget } = window.mp4Muxer;
+
+      // Calculate frame count for a perfect oscillation loop (~10 s)
+      // Main cycle period: 2π / (0.9 * speed) seconds
+      const cyclePeriod  = (2 * Math.PI) / (0.9 * speed);
+      const nCycles      = Math.max(1, Math.round(10 / cyclePeriod));
+      const loopDuration = nCycles * cyclePeriod;          // actual duration ≈ 10 s
+      const totalFrames  = Math.round(loopDuration * EXPORT_FPS);
+
+      const target = new ArrayBufferTarget();
+      const muxer  = new Muxer({
+        target,
+        video: { codec: 'avc', width: EW, height: EH },
+        fastStart: 'in-memory',
+        firstTimestampBehavior: 'offset'
+      });
+
+      function restoreLive() {
+        isRecording = false;
+        orbit.autoRotate = true;
+        renderer.setSize(live.w, live.h);
+        camera.aspect = live.w / live.h;
+        camera.updateProjectionMatrix();
+        btn.textContent = 'Export 10s MP4';
+        btn.disabled = false;
+      }
+
+      let encoderFailed = false;
+      const videoEncoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: e => { encoderFailed = true; alert('Encoder error: ' + e.message); restoreLive(); }
+      });
+
+      try {
+        videoEncoder.configure({
+          codec: 'avc1.640033',
+          width: EW,
+          height: EH,
+          bitrate: 15_000_000,
+          framerate: EXPORT_FPS
+        });
+        await new Promise(r => setTimeout(r, 100));
+        if (videoEncoder.state !== 'configured') throw new Error('Encoder failed to configure');
+      } catch (e) {
+        alert('Failed to start export: ' + e.message);
+        restoreLive();
+        return;
+      }
+
+      isRecording = true;
+
+      // Reusable temp canvas for frame capture
+      const tmp    = document.createElement('canvas');
+      tmp.width    = EW;
+      tmp.height   = EH;
+      const tmpCtx = tmp.getContext('2d', { alpha: false });
+
+      let frameNumber = 0;
+
+      function captureFrame() {
+        if (encoderFailed) { restoreLive(); return; }
+
+        if (frameNumber >= totalFrames) {
+          videoEncoder.flush().then(() => {
+            videoEncoder.close();
+            muxer.finalize();
+            const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = 'cyberwolf-sphere.mp4';
+            a.click();
+            URL.revokeObjectURL(url);
+            restoreLive();
+          }).catch(e => { alert('Error finalising video: ' + e.message); restoreLive(); });
+          return;
+        }
+
+        if (videoEncoder.encodeQueueSize > 30) {
+          setTimeout(captureFrame, 10);
+          return;
+        }
+
+        // t values spaced so nCycles complete oscillation cycles fit exactly in loopDuration
+        const t_frame = (frameNumber / totalFrames) * loopDuration * speed;
+        renderAt(t_frame);
+
+        tmpCtx.fillStyle = '#fff';
+        tmpCtx.fillRect(0, 0, EW, EH);
+        tmpCtx.drawImage(renderer.domElement, 0, 0, renderer.domElement.width, renderer.domElement.height, 0, 0, EW, EH);
+
+        const frame = new VideoFrame(tmp, {
+          timestamp: Math.round((frameNumber / EXPORT_FPS) * 1_000_000)
+        });
+        videoEncoder.encode(frame, { keyFrame: frameNumber % 60 === 0 });
+        frame.close();
+
+        btn.textContent = Math.round((++frameNumber / totalFrames) * 100) + '%';
+        requestAnimationFrame(captureFrame);
+      }
+
+      captureFrame();
+    });
+
   </script>
 </body>
 </html>
