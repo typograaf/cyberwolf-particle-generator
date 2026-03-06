@@ -435,66 +435,83 @@
       renderer.setSize(w, h);
     });
 
-    /* ── Export helpers ── */
+    /* ── Export ── */
     const EXPORT_FPS  = 60;
-    const EXPORT_SIZE = 3840; // 4K square — always even
+    const EXPORT_SIZE = 3840; // 4K square, always even
 
-    // Perfect-loop duration: snap to a whole number of oscillation cycles near 10 s
-    function loopDuration() {
-      const cyclePeriod = (2 * Math.PI) / (0.9 * speed);
-      const n = Math.max(1, Math.round(10 / cyclePeriod));
-      return n * cyclePeriod;
+    function calcLoopDuration() {
+      const period = (2 * Math.PI) / (0.9 * speed);
+      return Math.max(1, Math.round(10 / period)) * period; // ≈ 10 s, exact cycle multiple
     }
 
     document.getElementById('exportBtn').addEventListener('click', async () => {
       if (isRecording || isCapturing) return;
 
-      const btn = document.getElementById('exportBtn');
-      const isSafari = navigator.vendor && navigator.vendor.includes('Apple');
-      const hasVideoEncoder = typeof VideoEncoder !== 'undefined';
+      const btn       = document.getElementById('exportBtn');
+      const isSafari  = navigator.vendor && navigator.vendor.includes('Apple');
+      const hasVE     = typeof VideoEncoder !== 'undefined';
 
-      // Decide method: VideoEncoder (Chrome/Edge) or MediaRecorder (Safari / fallback)
-      if (!hasVideoEncoder && typeof MediaRecorder === 'undefined') {
-        alert('Video export is not supported in this browser.');
-        return;
+      if (!hasVE && typeof MediaRecorder === 'undefined') {
+        alert('Video export is not supported in this browser.'); return;
       }
 
       btn.textContent = 'Preparing…';
-      btn.disabled = true;
+      btn.disabled    = true;
 
       const live = canvasSize();
-      const EW   = EXPORT_SIZE;   // 3840 — even, 4K square
+      const EW   = EXPORT_SIZE;
       const EH   = EXPORT_SIZE;
-      const dur  = loopDuration();
+      const dur  = calcLoopDuration();
 
       orbit.autoRotate = false;
       renderer.setSize(EW, EH);
-      camera.aspect = EW / EH;
+      camera.aspect = 1.0;
       camera.updateProjectionMatrix();
 
+      let captureActive = false; // guard against ghost rAF/setTimeout calls
+
       function restoreLive() {
-        isRecording = false;
-        isCapturing = false;
+        captureActive    = false;
+        isRecording      = false;
+        isCapturing      = false;
         orbit.autoRotate = true;
         renderer.setSize(live.w, live.h);
         camera.aspect = live.w / live.h;
         camera.updateProjectionMatrix();
         btn.textContent = 'Export';
-        btn.disabled = false;
+        btn.disabled    = false;
       }
 
       /* ── VideoEncoder path (Chrome / Edge) ── */
-      if (hasVideoEncoder && !isSafari) {
+      if (hasVE && !isSafari) {
+        // Wait for mp4-muxer preload
         await new Promise(resolve => {
           const check = () => window.mp4Muxer ? resolve() : setTimeout(check, 50);
           check();
         });
 
+        // Find highest supported H.264 level for this resolution
+        const codecCandidates = [
+          'avc1.640042', // High Level 6.2
+          'avc1.640040', // High Level 6.0
+          'avc1.640034', // High Level 5.2
+          'avc1.640033', // High Level 5.1
+        ];
+        const baseConfig = { width: EW, height: EH, bitrate: 50_000_000, framerate: EXPORT_FPS };
+        let codec = null;
+        for (const c of codecCandidates) {
+          const { supported } = await VideoEncoder.isConfigSupported({ codec: c, ...baseConfig });
+          if (supported) { codec = c; break; }
+        }
+        if (!codec) {
+          alert('H.264 encoding is not supported at 4K on this device. Try Safari or a different browser.');
+          restoreLive(); return;
+        }
+
         const { Muxer, ArrayBufferTarget } = window.mp4Muxer;
         const totalFrames = Math.round(dur * EXPORT_FPS);
-
-        const target = new ArrayBufferTarget();
-        const muxer  = new Muxer({
+        const target      = new ArrayBufferTarget();
+        const muxer       = new Muxer({
           target,
           video: { codec: 'avc', width: EW, height: EH },
           fastStart: 'in-memory',
@@ -504,38 +521,37 @@
         let encoderFailed = false;
         const videoEncoder = new VideoEncoder({
           output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-          error: e => { encoderFailed = true; alert('Encoder error: ' + e.message); restoreLive(); }
+          error: e => {
+            encoderFailed = true;
+            alert('Encoder error: ' + e.message);
+            restoreLive();
+          }
         });
 
         try {
-          videoEncoder.configure({
-            codec: 'avc1.640042',   // H.264 High Profile Level 6.2 — supports 4K 60fps
-            width: EW,
-            height: EH,
-            bitrate: 50_000_000,    // 50 Mbps for 4K
-            framerate: EXPORT_FPS
-          });
+          videoEncoder.configure({ codec, ...baseConfig });
           await new Promise(r => setTimeout(r, 100));
-          if (videoEncoder.state !== 'configured') throw new Error('Encoder failed to configure');
+          if (videoEncoder.state !== 'configured') throw new Error('Encoder not configured');
         } catch (e) {
-          alert('Failed to start export: ' + e.message);
-          restoreLive();
-          return;
+          alert('Failed to configure encoder: ' + e.message);
+          restoreLive(); return;
         }
 
-        isRecording = true;
+        isRecording   = true;
+        captureActive = true;
 
         const tmp    = document.createElement('canvas');
         tmp.width    = EW;
         tmp.height   = EH;
         const tmpCtx = tmp.getContext('2d', { alpha: false });
-
         let frameNumber = 0;
 
         function captureFrame() {
-          if (encoderFailed) { restoreLive(); return; }
+          if (!captureActive) return;
+          if (encoderFailed)  { restoreLive(); return; }
 
           if (frameNumber >= totalFrames) {
+            captureActive = false;
             videoEncoder.flush().then(() => {
               videoEncoder.close();
               muxer.finalize();
@@ -545,22 +561,22 @@
               a.href = url; a.download = 'cyberwolf-sphere.mp4'; a.click();
               URL.revokeObjectURL(url);
               restoreLive();
-            }).catch(e => { alert('Error finalising video: ' + e.message); restoreLive(); });
+            }).catch(e => { alert('Finalise error: ' + e.message); restoreLive(); });
             return;
           }
 
           if (videoEncoder.encodeQueueSize > 30) {
-            setTimeout(captureFrame, 10);
-            return;
+            setTimeout(captureFrame, 10); return;
           }
 
-          // t spaced so exactly nCycles oscillation cycles fit in dur
           const t_frame = (frameNumber / totalFrames) * dur * speed;
           renderAt(t_frame);
 
           tmpCtx.fillStyle = '#fff';
           tmpCtx.fillRect(0, 0, EW, EH);
-          tmpCtx.drawImage(renderer.domElement, 0, 0, renderer.domElement.width, renderer.domElement.height, 0, 0, EW, EH);
+          tmpCtx.drawImage(renderer.domElement,
+            0, 0, renderer.domElement.width, renderer.domElement.height,
+            0, 0, EW, EH);
 
           const frame = new VideoFrame(tmp, {
             timestamp: Math.round((frameNumber / EXPORT_FPS) * 1_000_000)
@@ -573,7 +589,7 @@
         }
 
         captureFrame();
-        return; // VideoEncoder path handled
+        return;
       }
 
       /* ── MediaRecorder path (Safari / fallback) ── */
@@ -581,8 +597,7 @@
       const mimeType  = mimeTypes.find(t => MediaRecorder.isTypeSupported(t));
       if (!mimeType) {
         alert('Video recording is not supported in this browser.');
-        restoreLive();
-        return;
+        restoreLive(); return;
       }
 
       const stream   = renderer.domElement.captureStream(EXPORT_FPS);
@@ -599,15 +614,15 @@
         restoreLive();
       };
 
-      // Reset clock to 0 so the loop starts clean, then let live animate loop render
-      clock.start();
-      isCapturing = true;
+      clock.start();   // reset animation to t=0 for a clean loop
+      isCapturing   = true;
+      captureActive = true;
       recorder.start();
 
       const started = performance.now();
       const tick = setInterval(() => {
-        const pct = Math.min(99, Math.round((performance.now() - started) / (dur * 1000) * 100));
-        btn.textContent = pct + '%';
+        if (!captureActive) { clearInterval(tick); return; }
+        btn.textContent = Math.min(99, Math.round((performance.now() - started) / (dur * 1000) * 100)) + '%';
       }, 150);
 
       setTimeout(() => {
