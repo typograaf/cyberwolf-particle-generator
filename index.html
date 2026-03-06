@@ -525,9 +525,23 @@
       tmp.height   = encH;
       const tmpCtx = tmp.getContext('2d', { alpha: false });
 
+      // Pre-compute camera rotation per frame (mirrors orbit.autoRotate behaviour)
+      const exportStartPos = camera.position.clone();
+      const rotPerFrame    = (2 * Math.PI / 3600) * orbit.autoRotateSpeed; // same formula as OrbitControls
+
       // Sequential async render loop — no rAF, no captureActive juggling
       for (let i = 0; i < totalFrames; i++) {
         if (encoderError) { done('Encoder error: ' + encoderError.message); return; }
+
+        // Rotate camera around Y axis
+        const angle = i * rotPerFrame;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        camera.position.set(
+          exportStartPos.x * cos + exportStartPos.z * sin,
+          exportStartPos.y,
+          -exportStartPos.x * sin + exportStartPos.z * cos
+        );
+        camera.lookAt(orbit.target);
 
         const t_frame = (i / totalFrames) * dur * speed;
         renderAt(t_frame);
