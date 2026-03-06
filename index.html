@@ -501,14 +501,15 @@
         firstTimestampBehavior: 'offset',
       });
 
-      // Probe codec — same candidate list as equipe-danvers, extended for 4K
-      const candidates = ['avc1.640042', 'avc1.640040', 'avc1.640034', 'avc1.640033',
-                          'avc1.4D0033', 'avc1.640028', 'avc1.4D0028', 'avc1.42E028'];
+      // Probe codec with a small resolution to avoid level restrictions,
+      // then encode at full 4K (encoder accepts it once a valid codec string is found)
+      const candidates = ['avc1.640042', 'avc1.640040', 'avc1.640034', 'avc1.4D0034',
+                          'avc1.640033', 'avc1.4D0033', 'avc1.640028', 'avc1.4D0028', 'avc1.42E028'];
       let codec = null;
       for (const c of candidates) {
         try {
           const r = await VideoEncoder.isConfigSupported(
-            { codec: c, width: EW, height: EH, bitrate: 50_000_000, framerate: EXPORT_FPS });
+            { codec: c, width: 1280, height: 720, bitrate: 10_000_000, framerate: 30 });
           if (r.supported) { codec = c; break; }
         } catch (_) {}
       }
