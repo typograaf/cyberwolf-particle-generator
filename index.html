@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cyberwolf — Particle Generator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #fff;
+      overflow: hidden;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    #controls {
+      position: fixed;
+      bottom: 36px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      padding: 18px 26px;
+      background: rgba(0, 0, 0, 0.04);
+      border: 1px solid rgba(0, 0, 0, 0.09);
+      border-radius: 18px;
+      user-select: none;
+    }
+
+    .ctrl-divider {
+      height: 1px;
+      background: rgba(0, 0, 0, 0.08);
+      margin: 2px 0;
+    }
+
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .ctrl-label {
+      width: 68px;
+      font-size: 10px;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      color: rgba(0, 0, 0, 0.38);
+    }
+
+    .ctrl-val {
+      width: 42px;
+      text-align: right;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(0, 0, 0, 0.8);
+      letter-spacing: 0.02em;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 160px;
+      height: 1px;
+      background: rgba(0, 0, 0, 0.18);
+      border-radius: 1px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      background: #000;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.12s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.4);
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 600px) {
+      #controls {
+        bottom: 0;
+        left: 0;
+        right: 0;
+        transform: none;
+        border-radius: 18px 18px 0 0;
+        padding: 12px 16px 20px;
+        gap: 7px;
+        max-height: 55vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      input[type="range"] { width: 110px; }
+      .ctrl-label { width: 54px; font-size: 9px; }
+      .ctrl-val   { width: 36px; font-size: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="controls">
+    <div class="ctrl-row">
+      <span class="ctrl-label">Amount</span>
+      <input type="range" id="countSlider"    min="10"  max="3000" step="1"   value="3000">
+      <span class="ctrl-val" id="countVal">3000</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Order</span>
+      <input type="range" id="orderSlider"    min="0"   max="100"  step="1"   value="100">
+      <span class="ctrl-val" id="orderVal">100%</span>
+    </div>
+    <div class="ctrl-divider"></div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Shape</span>
+      <input type="range" id="sizeSlider"     min="10"  max="800"  step="1"   value="246">
+      <span class="ctrl-val" id="sizeVal">246%</span>
+    </div>
+    <div class="ctrl-divider"></div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Inner R</span>
+      <input type="range" id="innerSlider"    min="0.1" max="4.0"  step="0.1" value="1.0">
+      <span class="ctrl-val" id="innerVal">1.0</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Outer R</span>
+      <input type="range" id="outerSlider"    min="0.1" max="5.0"  step="0.1" value="1.9">
+      <span class="ctrl-val" id="outerVal">1.9</span>
+    </div>
+    <div class="ctrl-divider"></div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Speed</span>
+      <input type="range" id="speedSlider"    min="0"   max="500"  step="1"   value="132">
+      <span class="ctrl-val" id="speedVal">132%</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Stagger</span>
+      <input type="range" id="staggerSlider"  min="0"   max="100"  step="1"   value="100">
+      <span class="ctrl-val" id="staggerVal">100%</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Overlap</span>
+      <input type="range" id="overlapSlider"  min="0"   max="100"  step="1"   value="68">
+      <span class="ctrl-val" id="overlapVal">68%</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Shuffle</span>
+      <input type="range" id="shuffleSlider"  min="0"   max="100"  step="1"   value="27">
+      <span class="ctrl-val" id="shuffleVal">27%</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Rotation</span>
+      <input type="range" id="rotationSlider" min="0"   max="100"  step="1"   value="100">
+      <span class="ctrl-val" id="rotationVal">100%</span>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    /* ── Renderer ── */
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setClearColor(0xffffff, 1);
+    document.body.prepend(renderer.domElement);
+
+    /* ── Scene / Camera ── */
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.01, 200);
+    camera.position.set(0, 0, 8);
+
+    /* ── Orbit controls ── */
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    orbit.enableDamping   = true;
+    orbit.dampingFactor   = 0.05;
+    orbit.autoRotate      = true;
+    orbit.autoRotateSpeed = 3.0;
+    orbit.minDistance     = 2;
+    orbit.maxDistance     = 20;
+
+    /* ── Shape geometry (Sources/shape.svg) ──
+       local +Y = wide top  → outward from sphere centre
+       local -Y = narrow tip → inward toward centre
+    ── */
+    const SVG_W = 69, SVG_H = 59;
+    const BASE_SCALE = 0.0003;
+
+    const rawPts = [
+      [26.9443, 58.7875], [41.369,  58.7875],
+      [68.3132, 12.5196], [60.9648,  0],
+      [ 7.34843, 0],      [ 0,      12.5196],
+    ];
+
+    const shape = new THREE.Shape();
+    rawPts.forEach(([x, y], i) => {
+      const tx =  (x - SVG_W / 2) * BASE_SCALE;
+      const ty = -(y - SVG_H / 2) * BASE_SCALE;
+      i === 0 ? shape.moveTo(tx, ty) : shape.lineTo(tx, ty);
+    });
+    shape.closePath();
+
+    const particleGeo = new THREE.ShapeGeometry(shape);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+
+    /* ── Particle data ── */
+    const MAX_COUNT = 3000;
+    const PHI       = (1 + Math.sqrt(5)) / 2;
+    const WAVE_AMP  = 0.30;
+    const WAVE_FREQ = 2.5;
+    const WAVE_SPD  = 0.45;
+
+    /* ── Grid directions: true lat/lon grid, recomputed on count change ──
+       nLon columns × nLat rows, equal angular spacing in both axes.
+       Latitudes avoid exact poles so every row is fully populated.
+       Wave displacement is scaled to zero at 100% Order so the grid stays crisp. */
+    const gridDirs = Array.from({ length: MAX_COUNT }, () => new THREE.Vector3());
+
+    function computeGridDirs(n) {
+      if (n < 1) return;
+      const nLon = Math.max(2, Math.round(Math.sqrt(2 * n)));
+      const nLat = Math.max(1, Math.ceil(n / nLon));
+      for (let i = 0; i < n; i++) {
+        const row = Math.floor(i / nLon);
+        const col = i % nLon;
+        // Space latitudes evenly, never touching poles
+        const lat = Math.PI * ((row + 0.5) / nLat - 0.5);
+        const lon = 2 * Math.PI * col / nLon;
+        gridDirs[i].set(
+          Math.cos(lat) * Math.cos(lon),
+          Math.sin(lat),
+          Math.cos(lat) * Math.sin(lon),
+        ).normalize();
+      }
+    }
+
+    /* ── Random directions: uniform on sphere, fixed at startup ── */
+    const randDirs = Array.from({ length: MAX_COUNT }, () => {
+      const lat = Math.PI * (Math.random() - 0.5);
+      const lon = 2 * Math.PI * Math.random();
+      return new THREE.Vector3(
+        Math.cos(lat) * Math.cos(lon),
+        Math.sin(lat),
+        Math.cos(lat) * Math.sin(lon),
+      ).normalize();
+    });
+
+    /* ── Stagger order: shuffled index mapping ──
+       Grid indices are spatial (0–34 = first row, 35–69 = second row, …).
+       Assigning stagger phase by raw index makes whole rows fire together.
+       A Fisher-Yates shuffle breaks the spatial correlation so every individual
+       shape gets a unique, non-adjacent phase slot → true shape-by-shape firing. */
+    const phaseOrder = new Int32Array(MAX_COUNT);
+    for (let i = 0; i < MAX_COUNT; i++) phaseOrder[i] = i;
+    for (let i = MAX_COUNT - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const tmp = phaseOrder[i]; phaseOrder[i] = phaseOrder[j]; phaseOrder[j] = tmp;
+    }
+
+    const instancedMesh = new THREE.InstancedMesh(particleGeo, mat, MAX_COUNT);
+    instancedMesh.frustumCulled = false;
+    scene.add(instancedMesh);
+
+    /* ── Live values ── */
+    let currentCount = 3000;
+    let sizePct      = 246;
+    let orderPct     = 100;
+    let speed        = 1.32;
+    let staggerPct   = 100;  // 0% = all in sync, 100% = one shape at a time
+    let overlapPct   = 68;   // 0% = one at a time, 100% = all always moving
+    let shufflePct   = 27;   // 0% = sequential order, 100% = shuffled order
+    let innerR       = 1.0;
+    let outerR       = 1.9;
+
+    computeGridDirs(currentCount);
+    instancedMesh.count = currentCount;
+
+    function bind(id, valId, fmt, onChange) {
+      const el = document.getElementById(id);
+      document.getElementById(valId).textContent = fmt(parseFloat(el.value));
+      el.addEventListener('input', () => {
+        const v = parseFloat(el.value);
+        document.getElementById(valId).textContent = fmt(v);
+        onChange(v);
+      });
+    }
+
+    bind('countSlider',    'countVal',    v => Math.round(v),       v => {
+      currentCount = Math.round(v);
+      computeGridDirs(currentCount);
+      instancedMesh.count = currentCount;
+    });
+    bind('orderSlider',    'orderVal',    v => Math.round(v) + '%', v => { orderPct   = v; });
+    bind('sizeSlider',     'sizeVal',     v => Math.round(v) + '%', v => { sizePct    = v; });
+    bind('innerSlider',    'innerVal',    v => v.toFixed(1),         v => { innerR     = v; });
+    bind('outerSlider',    'outerVal',    v => v.toFixed(1),         v => { outerR     = v; });
+    bind('speedSlider',    'speedVal',    v => Math.round(v) + '%', v => { speed      = v / 100; });
+    bind('staggerSlider',  'staggerVal',  v => Math.round(v) + '%', v => { staggerPct = v; });
+    bind('overlapSlider',  'overlapVal',  v => Math.round(v) + '%', v => { overlapPct = v; });
+    bind('shuffleSlider',  'shuffleVal',  v => Math.round(v) + '%', v => { shufflePct = v; });
+    bind('rotationSlider', 'rotationVal', v => Math.round(v) + '%', v => {
+      orbit.autoRotateSpeed = (v / 100) * 3.0;
+    });
+
+    /* ── Pre-allocated temporaries ── */
+    const _vBase  = new THREE.Vector3();
+    const _vEast  = new THREE.Vector3();
+    const _vNorth = new THREE.Vector3();
+    const _vA     = new THREE.Vector3();
+    const _vB     = new THREE.Vector3();
+    const _vC     = new THREE.Vector3();
+    const _vD     = new THREE.Vector3();
+    const _vE     = new THREE.Vector3();
+    const _m4     = new THREE.Matrix4();
+    const camDir  = new THREE.Vector3();
+    const dummy   = new THREE.Object3D();
+
+    /* ── Render loop ── */
+    const clock = new THREE.Clock();
+
+    (function animate() {
+      requestAnimationFrame(animate);
+
+      orbit.update();
+      const t = clock.getElapsedTime() * speed;
+
+      camDir.copy(camera.position).normalize();
+
+      const sizeMult  = sizePct / 100;
+      const rnd       = 1.0 - orderPct / 100;        // 0=grid, 1=random
+      const waveScale = rnd;                          // wave is zero at 100% Order → grid stays crisp
+      const rInner    = Math.min(innerR, outerR - 0.05);
+      const rOuter    = outerR;
+
+      const TWO_PI    = 2 * Math.PI;
+      const stagger01 = staggerPct / 100;
+      const overlap01 = overlapPct / 100;
+      const shuffle01 = shufflePct / 100;
+      const N         = currentCount;
+      // cyclePhase: 0–π = "out wave", π–2π = "in wave"
+      const cyclePhase = ((t * 0.9) % TWO_PI + TWO_PI) % TWO_PI;
+      // Window width per shape per half-cycle:
+      //   overlap=0, stagger=100% → π/N  (one at a time, no overlap)
+      //   overlap=1, stagger=100% → π    (all always moving)
+      //   stagger=0              → π    (all in sync, overlap has no effect)
+      const halfWindow = Math.PI * (1 - stagger01 * (1 - 1 / N) * (1 - overlap01));
+
+      for (let i = 0; i < currentCount; i++) {
+
+        /* ── Base direction (grid ↔ random) ── */
+        _vBase.lerpVectors(gridDirs[i], randDirs[i], rnd).normalize();
+
+        /* ── Tangents derived from base ── */
+        _vEast.set(-_vBase.z, 0, _vBase.x);
+        if (_vEast.lengthSq() < 0.001) _vEast.set(1, 0, 0);
+        _vEast.normalize();
+        _vNorth.crossVectors(_vEast, _vBase).normalize();
+
+        /* ── Surface wave — zero at 100% Order so grid remains visible ── */
+        const lon  = Math.atan2(_vBase.z, _vBase.x);
+        const lat  = _vBase.y;
+        const wE   = Math.sin(lon * WAVE_FREQ + t * WAVE_SPD) * WAVE_AMP * waveScale;
+        const wN   = Math.sin(lat * WAVE_FREQ * 1.4 - t * WAVE_SPD * 0.7) * WAVE_AMP * waveScale * 0.5;
+
+        _vA.copy(_vBase)
+          .addScaledVector(_vEast,  wE)
+          .addScaledVector(_vNorth, wN)
+          .normalize();
+
+        /* ── Radial oscillation — two-wave sequential model ──
+           Cycle 0–2π is split into four zones per shape, measured from outStart:
+             [0,           halfWindow) → traveling out
+             [halfWindow,  π)          → parked at outer (others still going out)
+             [π,           π+halfWindow) → traveling in
+             [π+halfWindow, 2π)        → parked at inner (waiting for next cycle)
+           Using modular outPhase avoids any 2π wraparound snapping. */
+
+        // Firing rank: 0% shuffle = sequential (i), 100% shuffle = shuffled (phaseOrder[i])
+        const rank     = i * (1 - shuffle01) + phaseOrder[i] * shuffle01;
+        // Phase offset for this shape's window start
+        const outStart = (rank / N) * stagger01 * Math.PI;
+        // Modular distance from this shape's start — always in [0, 2π)
+        const outPhase = ((cyclePhase - outStart) % TWO_PI + TWO_PI) % TWO_PI;
+
+        let r;
+        if (outPhase < halfWindow) {
+          // Traveling out: rInner → rOuter
+          const p = outPhase / halfWindow;
+          r = rInner + (rOuter - rInner) * (0.5 - 0.5 * Math.cos(p * Math.PI));
+        } else if (outPhase < Math.PI) {
+          // Parked at outer while remaining shapes travel out
+          r = rOuter;
+        } else if (outPhase < Math.PI + halfWindow) {
+          // Traveling in: rOuter → rInner
+          const p = (outPhase - Math.PI) / halfWindow;
+          r = rOuter - (rOuter - rInner) * (0.5 - 0.5 * Math.cos(p * Math.PI));
+        } else {
+          // Parked at inner, waiting for next cycle
+          r = rInner;
+        }
+
+        _vB.copy(_vA).multiplyScalar(r);
+
+        /* ── Depth scale ── */
+        const facing     = Math.max(0, _vA.dot(camDir));
+        const depthScale = 0.04 + 0.96 * Math.pow(facing, 1.4);
+        dummy.scale.setScalar(depthScale * sizeMult);
+
+        /* ── Billboard: face camera, tip toward centre ── */
+        _vC.subVectors(camera.position, _vB).normalize();
+
+        const d = _vA.dot(_vC);
+        _vD.copy(_vA).addScaledVector(_vC, -d);
+        if (_vD.lengthSq() < 1e-6) {
+          _vD.copy(camera.up).addScaledVector(_vC, -camera.up.dot(_vC));
+        }
+        _vD.normalize();
+        _vE.crossVectors(_vD, _vC).normalize();
+
+        _m4.makeBasis(_vE, _vD, _vC);
+        dummy.position.copy(_vB);
+        dummy.quaternion.setFromRotationMatrix(_m4);
+        dummy.updateMatrix();
+        instancedMesh.setMatrixAt(i, dummy.matrix);
+      }
+
+      instancedMesh.instanceMatrix.needsUpdate = true;
+      renderer.render(scene, camera);
+    })();
+
+    /* ── Resize ── */
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>
